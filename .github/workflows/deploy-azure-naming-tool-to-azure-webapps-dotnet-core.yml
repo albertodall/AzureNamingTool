@@ -5,13 +5,14 @@
 #
 # To configure this workflow:
 #
-# 1. Download the Publish Profile for your Azure Web App. You can download this file from the Overview page of your Web App in the Azure Portal.
-#    For more information: https://docs.microsoft.com/en-us/azure/app-service/deploy-github-actions?tabs=applevel#generate-deployment-credentials
+# 1. Create a federated identity credential on an Azure AD app registration or managed identity.
+#    For instructions see: https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure
 #
-# 2. Create a secret in your repository named AZURE_WEBAPP_PUBLISH_PROFILE, paste the publish profile contents as the value of the secret.
-#    For instructions on obtaining the publish profile see: https://docs.microsoft.com/azure/app-service/deploy-github-actions#configure-the-github-secret
-#
-# 3. Create a secret in your repository named AZURE_WEBAPP_NAME, and update the value to the name of your Azure App Service.
+# 2. Create the following secrets in your repository:
+#    - AZURE_WEBAPP_NAME: the name of your Azure App Service
+#    - AZURE_CLIENT_ID: the client ID of your Azure AD app registration / managed identity
+#    - AZURE_TENANT_ID: your Azure tenant ID
+#    - AZURE_SUBSCRIPTION_ID: your Azure subscription ID
 #
 # For more information on GitHub Actions for Azure: https://github.com/Azure/Actions
 # For more information on the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
@@ -48,8 +49,10 @@ jobs:
         - id: secrets-valid
           env: 
             azure-webapp-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-            azure-webapp-publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          if: (env.azure-webapp-name != null && env.azure-webapp-publish-profile != null)
+            azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+            azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+            azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          if: (env.azure-webapp-name != null && env.azure-client-id != null && env.azure-tenant-id != null && env.azure-subscription-id != null)
           run: echo 'isvalid=true' >> $GITHUB_OUTPUT
             
   build:
@@ -91,6 +94,7 @@ jobs:
         working-directory: ready/AzNamingTool 
     permissions:
       contents: none
+      id-token: write
     runs-on: ubuntu-latest
     needs: [build,check-secrets]
     if: needs.check-secrets.outputs.secrets-valid == 'true'
@@ -104,10 +108,16 @@ jobs:
         with:
           name: .net-app
 
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
